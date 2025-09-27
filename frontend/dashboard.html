@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SpeakWise - Dashboard</title>
+    
+    <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+    <div class="dashboard-container">
+        <!-- Header -->
+        <header class="dashboard-header">
+            <div class="header-content">
+                <div class="logo">
+                    <h1 class="logo-text">SpeakWise</h1>
+                    <span class="logo-subtitle">AI Speech Coaching</span>
+                </div>
+                <div class="header-actions">
+                    <button class="header-btn" onclick="showProfile()">
+                        <span class="btn-icon">👤</span>
+                        Profile
+                    </button>
+                    <button class="header-btn logout-btn" onclick="logout()">
+                        <span class="btn-icon">🚪</span>
+                        Logout
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="dashboard-main">
+            <div class="welcome-section">
+                <h2 class="welcome-title">Welcome back to SpeakWise!</h2>
+                <p class="welcome-subtitle">Upload your content and start improving your speaking skills with AI-powered analysis</p>
+            </div>
+
+            <!-- Upload Section -->
+            <section class="upload-section">
+                <h3 class="section-title">Content Upload</h3>
+                <div class="upload-grid">
+                    <!-- Document Upload -->
+                    <div class="upload-card" onclick="triggerUpload('document')">
+                        <div class="upload-icon">📄</div>
+                        <h4 class="upload-title">Upload Document</h4>
+                        <p class="upload-description">PDF, DOCX, TXT files for speech content analysis</p>
+                        <button class="upload-btn">Choose Document</button>
+                    </div>
+
+                    <!-- Video Upload -->
+                    <div class="upload-card" onclick="triggerUpload('video')">
+                        <div class="upload-icon">🎥</div>
+                        <h4 class="upload-title">Upload Video</h4>
+                        <p class="upload-description">MP4, AVI, MOV files for presentation analysis</p>
+                        <button class="upload-btn">Choose Video</button>
+                    </div>
+
+                    <!-- Voice Upload -->
+                    <div class="upload-card" onclick="triggerUpload('voice')">
+                        <div class="upload-icon">🎤</div>
+                        <h4 class="upload-title">Upload Audio</h4>
+                        <p class="upload-description">MP3, WAV files for voice coaching and analysis</p>
+                        <button class="upload-btn">Choose Audio</button>
+                    </div>
+
+                    <!-- OpenCV Analysis -->
+                    <div class="upload-card opencv-card" onclick="showOpenCV()">
+                        <div class="upload-icon">👁️</div>
+                        <h4 class="upload-title">Live Analysis</h4>
+                        <p class="upload-description">Real-time gesture and posture analysis</p>
+                        <button class="upload-btn opencv-btn">Start Analysis</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Quick Actions -->
+            <section class="quick-actions">
+                <h3 class="section-title">Quick Actions</h3>
+                <div class="action-buttons">
+                    <button class="action-btn record-btn" onclick="startRecording()">
+                        <span class="action-icon">🔴</span>
+                        <span class="action-text">Start Recording</span>
+                    </button>
+                    <button class="action-btn practice-btn" onclick="practiceMode()">
+                        <span class="action-icon">🎯</span>
+                        <span class="action-text">Practice Mode</span>
+                    </button>
+                    <button class="action-btn report-btn" onclick="viewReports()">
+                        <span class="action-icon">📊</span>
+                        <span class="action-text">View Reports</span>
+                    </button>
+                    <button class="action-btn settings-btn" onclick="settings()">
+                        <span class="action-icon">⚙️</span>
+                        <span class="action-text">Settings</span>
+                    </button>
+                </div>
+            </section>
+
+            <!-- Recent Activity -->
+            <section class="recent-activity">
+                <h3 class="section-title">Recent Activity</h3>
+                <div class="activity-list">
+                    <div class="activity-item">
+                        <div class="activity-icon">📄</div>
+                        <div class="activity-content">
+                            <h4 class="activity-title">Document Analysis Complete</h4>
+                            <p class="activity-description">presentation_draft.pdf • 2 hours ago</p>
+                            <div class="activity-tags">
+                                <span class="tag">Completed</span>
+                                <span class="tag score">Score: 85%</span>
+                            </div>
+                        </div>
+                        <button class="activity-btn">View Results</button>
+                    </div>
+                    
+                    <div class="activity-item">
+                        <div class="activity-icon">🎤</div>
+                        <div class="activity-content">
+                            <h4 class="activity-title">Voice Training Session</h4>
+                            <p class="activity-description">speaking_practice.mp3 • 1 day ago</p>
+                            <div class="activity-tags">
+                                <span class="tag">Analyzed</span>
+                                <span class="tag score">Score: 78%</span>
+                            </div>
+                        </div>
+                        <button class="activity-btn">Review</button>
+                    </div>
+                    
+                    <div class="activity-item">
+                        <div class="activity-icon">🎥</div>
+                        <div class="activity-content">
+                            <h4 class="activity-title">Video Gesture Analysis</h4>
+                            <p class="activity-description">presentation_video.mp4 • 3 days ago</p>
+                            <div class="activity-tags">
+                                <span class="tag">Processing</span>
+                                <span class="tag score">Score: 92%</span>
+                            </div>
+                        </div>
+                        <button class="activity-btn">View</button>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Hidden File Inputs -->
+        <input type="file" id="documentInput" accept=".pdf,.doc,.docx,.txt" style="display: none;" onchange="handleFileUpload(event, 'document')">
+        <input type="file" id="videoInput" accept=".mp4,.avi,.mov,.wmv" style="display: none;" onchange="handleFileUpload(event, 'video')">
+        <input type="file" id="voiceInput" accept=".mp3,.wav,.m4a,.aac" style="display: none;" onchange="handleFileUpload(event, 'voice')">
+
+        <!-- Upload Progress Modal -->
+        <div id="uploadModal" class="modal" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Uploading File...</h3>
+                </div>
+                <div class="progress-container">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+                    <p id="progressText" class="progress-text">0% Complete</p>
+                </div>
+                <div class="modal-actions">
+                    <button class="modal-btn cancel-btn" onclick="cancelUpload()">Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- OpenCV Modal -->
+        <div id="opencvModal" class="modal" style="display: none;">
+            <div class="modal-content opencv-modal">
+                <div class="modal-header">
+                    <h3>Live Speech Analysis</h3>
+                    <button class="close-btn" onclick="closeOpenCV()">×</button>
+                </div>
+                <div class="opencv-content">
+                    <div class="video-section">
+                        <div class="video-container">
+                            <video id="cameraFeed" autoplay muted></video>
+                            <canvas id="analysisCanvas"></canvas>
+                        </div>
+                    </div>
+                    <div class="analysis-section">
+                        <h4 class="analysis-title">Real-time Metrics</h4>
+                        <div class="analysis-metrics">
+                            <div class="metric-card">
+                                <span class="metric-label">Posture Score</span>
+                                <span class="metric-value" id="postureScore">--</span>
+                            </div>
+                            <div class="metric-card">
+                                <span class="metric-label">Eye Contact</span>
+                                <span class="metric-value" id="eyeContact">--</span>
+                            </div>
+                            <div class="metric-card">
+                                <span class="metric-label">Gestures</span>
+                                <span class="metric-value" id="gestureCount">--</span>
+                            </div>
+                        </div>
+                        <div class="opencv-actions">
+                            <button class="opencv-action-btn start-btn" onclick="startAnalysis()">Start</button>
+                            <button class="opencv-action-btn stop-btn" onclick="stopAnalysis()">Stop</button>
+                            <button class="opencv-action-btn save-btn" onclick="saveAnalysis()">Save Session</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let uploadInterval;
+        let analysisRunning = false;
+        let mediaStream;
+
+        // File upload functions
+        function triggerUpload(type) {
+            document.getElementById(type + 'Input').click();
+        }
+
+        function handleFileUpload(event, type) {
+            const file = event.target.files[0];
+            if (file) {
+                console.log(`Uploading ${type} file:`, file.name);
+                showUploadModal();
+                simulateUpload();
+            }
+        }
+
+        function showUploadModal() {
+            document.getElementById('uploadModal').style.display = 'flex';
+        }
+
+        function simulateUpload() {
+            let progress = 0;
+            const progressFill = document.getElementById('progressFill');
+            const progressText = document.getElementById('progressText');
+            
+            uploadInterval = setInterval(() => {
+                progress += Math.random() * 15;
+                if (progress >= 100) {
+                    progress = 100;
+                    clearInterval(uploadInterval);
+                    setTimeout(() => {
+                        document.getElementById('uploadModal').style.display = 'none';
+                        showNotification('Upload completed successfully!', 'success');
+                    }, 500);
+                }
+                progressFill.style.width = progress + '%';
+                progressText.textContent = Math.round(progress) + '% Complete';
+            }, 200);
+        }
+
+        function cancelUpload() {
+            clearInterval(uploadInterval);
+            document.getElementById('uploadModal').style.display = 'none';
+            showNotification('Upload cancelled', 'info');
+        }
+
+        // OpenCV functions
+        function showOpenCV() {
+            document.getElementById('opencvModal').style.display = 'flex';
+            initializeCamera();
+        }
+
+        function closeOpenCV() {
+            document.getElementById('opencvModal').style.display = 'none';
+            stopAnalysis();
+        }
+
+        async function initializeCamera() {
+            try {
+                const video = document.getElementById('cameraFeed');
+                mediaStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { width: 640, height: 480 } 
+                });
+                video.srcObject = mediaStream;
+            } catch (error) {
+                console.error('Error accessing camera:', error);
+                showNotification('Camera access denied', 'error');
+            }
+        }
+
+        function startAnalysis() {
+            if (analysisRunning) return;
+            
+            analysisRunning = true;
+            showNotification('Analysis started', 'success');
+            
+            // Simulate real-time metrics
+            const postureScore = document.getElementById('postureScore');
+            const eyeContact = document.getElementById('eyeContact');
+            const gestureCount = document.getElementById('gestureCount');
+            
+            let gestureCounter = 0;
+            
+            const analysisInterval = setInterval(() => {
+                if (!analysisRunning) {
+                    clearInterval(analysisInterval);
+                    return;
+                }
+                
+                // Simulate changing metrics
+                postureScore.textContent = (75 + Math.random() * 20).toFixed(0) + '%';
+                eyeContact.textContent = (60 + Math.random() * 30).toFixed(0) + '%';
+                gestureCount.textContent = Math.floor(gestureCounter / 10);
+                gestureCounter += Math.random() * 3;
+            }, 1000);
+        }
+
+        function stopAnalysis() {
+            analysisRunning = false;
+            if (mediaStream) {
+                mediaStream.getTracks().forEach(track => track.stop());
+            }
+            
+            // Reset metrics
+            document.getElementById('postureScore').textContent = '--';
+            document.getElementById('eyeContact').textContent = '--';
+            document.getElementById('gestureCount').textContent = '--';
+            
+            showNotification('Analysis stopped', 'info');
+        }
+
+        function saveAnalysis() {
+            if (!analysisRunning) {
+                showNotification('No active analysis to save', 'warning');
+                return;
+            }
+            showNotification('Analysis session saved!', 'success');
+        }
+
+        // Quick action functions
+        function startRecording() {
+            showNotification('Recording started', 'success');
+            // Implement recording logic here
+        }
+
+        function practiceMode() {
+            showNotification('Practice mode activated', 'info');
+            // Implement practice mode logic here
+        }
+
+        function viewReports() {
+            showNotification('Loading reports...', 'info');
+            // Implement reports view logic here
+        }
+
+        function settings() {
+            showNotification('Opening settings...', 'info');
+            // Implement settings page logic here
+        }
+
+        // Profile and logout functions
+        function showProfile() {
+            showNotification('Profile settings coming soon', 'info');
+            // Implement profile modal or page navigation
+        }
+
+        function logout() {
+            if (confirm('Are you sure you want to logout?')) {
+                showNotification('Logging out...', 'info');
+                // Implement logout logic - redirect to login page
+                setTimeout(() => {
+                    window.location.href = 'login.html'; // Adjust path as needed
+                }, 1000);
+            }
+        }
+
+        // Notification system
+        function showNotification(message, type = 'info') {
+            // Create notification element
+            const notification = document.createElement('div');
+            notification.className = `notification notification-${type}`;
+            notification.textContent = message;
+            
+            // Style the notification
+            notification.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                padding: 12px 20px;
+                border-radius: 8px;
+                color: white;
+                font-weight: 500;
+                z-index: 10000;
+                opacity: 0;
+                transform: translateX(100%);
+                transition: all 0.3s ease;
+                max-width: 300px;
+                word-wrap: break-word;
+            `;
+            
+            // Set background color based on type
+            switch(type) {
+                case 'success':
+                    notification.style.background = 'linear-gradient(135deg, #27ae60, #2ecc71)';
+                    break;
+                case 'error':
+                    notification.style.background = 'linear-gradient(135deg, #e74c3c, #c0392b)';
+                    break;
+                case 'warning':
+                    notification.style.background = 'linear-gradient(135deg, #f39c12, #e67e22)';
+                    break;
+                default:
+                    notification.style.background = 'linear-gradient(135deg, #3498db, #2980b9)';
+            }
+            
+            // Add to DOM
+            document.body.appendChild(notification);
+            
+            // Animate in
+            setTimeout(() => {
+                notification.style.opacity = '1';
+                notification.style.transform = 'translateX(0)';
+            }, 100);
+            
+            // Remove after 3 seconds
+            setTimeout(() => {
+                notification.style.opacity = '0';
+                notification.style.transform = 'translateX(100%)';
+                setTimeout(() => {
+                    if (notification.parentNode) {
+                        notification.parentNode.removeChild(notification);
+                    }
+                }, 300);
+            }, 3000);
+        }
+
+        // Initialize dashboard
+        document.addEventListener('DOMContentLoaded', function() {
+            showNotification('Welcome to SpeakWise Dashboard!', 'success');
+        });
+
+        // Handle page cleanup
+        window.addEventListener('beforeunload', function() {
+            if (mediaStream) {
+                mediaStream.getTracks().forEach(track => track.stop());
+            }
+        });
+    </script>
+</body>
+</html>
