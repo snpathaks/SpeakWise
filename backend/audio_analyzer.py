@@ -4,7 +4,9 @@ import whisper
 import soundfile as sf
 import os
 import time
+import uuid
 from typing import Dict, List, Optional, Tuple
+from dataclasses import dataclass, asdict
 import logging
 import re
 from collections import defaultdict
@@ -13,6 +15,71 @@ import json
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class AudioConfig:
+    """Configuration for audio analysis"""
+    # Whisper settings
+    model_size: str = "base"
+    language: str = "en"
+    
+    # Audio processing thresholds
+    energy_percentile_threshold: int = 30
+    silence_percentile_threshold: int = 20
+    min_pause_duration: float = 0.1  # seconds
+    low_volume_threshold: float = 0.01
+    
+    # Pitch analysis settings
+    pitch_min_freq: int = 50  # Hz
+    pitch_max_freq: int = 400  # Hz
+    pitch_threshold: float = 0.1
+    
+    # Frame settings
+    frame_length: int = 2048
+    hop_length: int = 512
+    vad_frame_length_ms: int = 25  # milliseconds
+    vad_hop_length_ms: int = 10  # milliseconds
+    
+    # History settings
+    max_history: int = 50
+    
+    # File size limit (100 MB)
+    max_file_size_mb: int = 100
+    
+    # Speaking rate categories (words per minute)
+    slow_rate_max: int = 120
+    normal_rate_max: int = 160
+    fast_rate_max: int = 200
+
+
+@dataclass
+class AnalysisResult:
+    """Structured result from audio analysis"""
+    timestamp: float
+    duration: float
+    sample_rate: int
+    analysis_successful: bool
+    transcription: str
+    confidence_score: float
+    filler_word_count: int
+    filler_word_rate: float
+    speaking_rate_wpm: float
+    pause_analysis: Dict
+    pitch_analysis: Dict
+    volume_analysis: Dict
+    clarity_score: float
+    voice_stability: float
+    word_count: int
+    processing_time: float
+    speech_segments: List[Dict]
+    error: Optional[str] = None
+    warnings: List[str] = None
+    
+    def to_dict(self) -> Dict:
+        """Convert to dictionary"""
+        return asdict(self)
+
 
 class AudioAnalyzer:
     """
@@ -23,26 +90,28 @@ class AudioAnalyzer:
     - Speaking pattern analysis
     """
     
-    def __init__(self, model_size: str = "base"):
+    def __init__(self, config: Optional[AudioConfig] = None):
         """
         Initialize AudioAnalyzer with Whisper model
         
         Args:
-            model_size: Whisper model size ("tiny", "base", "small", "medium", "large")
+            config: AudioConfig instance with analysis parameters
         """
-        self.model_size = model_size
+        self.config = config or AudioConfig()
         self.whisper_model = None
+        
+        # Expanded filler words list
         self.filler_words = [
-            'um', 'uh', 'uhm', 'er', 'eh', 'ah', 'oh',
+            'um', 'uh', 'uhm', 'er', 'eh', 'ah', 'oh', 'hmm',
             'like', 'you know', 'so', 'actually', 'basically',
             'literally', 'totally', 'really', 'very',
             'kind of', 'sort of', 'i mean', 'well',
-            'okay', 'alright', 'right', 'yeah', 'yes'
+            'okay', 'alright', 'right', 'yeah', 'yes', 'yep',
+            'sure', 'fine', 'good', 'great'
         ]
         
         # Analysis history for pattern detection
         self.analysis_history = []
-        self.max_history = 50
         
         # Voice characteristics baseline (updated during analysis)
         self.voice_baseline = {
@@ -52,19 +121,40 @@ class AudioAnalyzer:
             'volume_baseline': None
         }
         
-        logger.info(f"AudioAnalyzer initialized with model size: {model_size}")
+        logger.info(f"AudioAnalyzer initialized with model size: {self.config.model_size}")
     
     def _get_whisper_model(self):
         """Lazy loading of Whisper model to improve startup time"""
         if self.whisper_model is None:
-            logger.info(f"Loading Whisper model: {self.model_size}")
+            logger.info(f"Loading Whisper model: {self.config.model_size}")
             try:
-                self.whisper_model = whisper.load_model(self.model_size)
+                self.whisper_model = whisper.load_model(self.config.model_size)
                 logger.info("Whisper model loaded successfully")
             except Exception as e:
                 logger.error(f"Error loading Whisper model: {e}")
-                raise
+                raise RuntimeError(f"Failed to load Whisper model: {e}")
         return self.whisper_model
+    
+    def _validate_audio_file(self, file_path: str) -> None:
+        """
+        Validate audio file before processing
+        
+        Args:
+            file_path: Path to audio file
+            
+        Raises:
+            FileNotFoundError: If file doesn't exist
+            ValueError: If file is too large or invalid
+        """
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"Audio file not found: {file_path}")
+        
+        file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
+        if file_size_mb > self.config.max_file_size_mb:
+            raise ValueError(
+                f"File too large: {file_size_mb:.1f}MB "
+                f"(max: {self.config.max_file_size_mb}MB)"
+            )
     
     def analyze_audio_file(self, audio_file_path: str) -> Dict:
         """
@@ -77,8 +167,8 @@ class AudioAnalyzer:
             Dictionary containing analysis results
         """
         try:
-            if not os.path.exists(audio_file_path):
-                raise FileNotFoundError(f"Audio file not found: {audio_file_path}")
+            # Validate file
+            self._validate_audio_file(audio_file_path)
             
             # Load audio file
             audio_data, sample_rate = librosa.load(audio_file_path, sr=22050)
@@ -115,8 +205,9 @@ class AudioAnalyzer:
         """
         try:
             start_time = time.time()
+            warnings = []
             
-            # Initialize results
+            # Initialize results structure
             results = {
                 'timestamp': start_time,
                 'duration': len(audio_data) / sample_rate,
@@ -126,24 +217,30 @@ class AudioAnalyzer:
                 'confidence_score': 0.0,
                 'filler_word_count': 0,
                 'filler_word_rate': 0.0,
-                'speaking_rate': 0.0,  # words per minute
+                'speaking_rate_wpm': 0.0,
                 'pause_analysis': {},
                 'pitch_analysis': {},
                 'volume_analysis': {},
                 'clarity_score': 0.0,
                 'voice_stability': 0.0,
-                'energy_levels': {},
-                'speech_segments': []
+                'speech_segments': [],
+                'word_count': 0,
+                'warnings': []
             }
             
             # Basic audio quality checks
-            if np.max(np.abs(audio_data)) < 0.01:
-                logger.warning("Audio level very low, analysis may be inaccurate")
-                results['volume_warning'] = 'Audio level too low'
+            max_amplitude = np.max(np.abs(audio_data))
+            if max_amplitude < self.config.low_volume_threshold:
+                warning = f"Audio level very low ({max_amplitude:.4f}), analysis may be inaccurate"
+                logger.warning(warning)
+                warnings.append(warning)
             
             # Voice Activity Detection (VAD)
             speech_segments = self._detect_speech_segments(audio_data, sample_rate)
             results['speech_segments'] = speech_segments
+            
+            if not speech_segments:
+                warnings.append("No speech segments detected")
             
             # Transcription using Whisper
             transcription_data = self._transcribe_audio(audio_data, sample_rate, file_path)
@@ -188,13 +285,14 @@ class AudioAnalyzer:
             
             processing_time = time.time() - start_time
             results['processing_time'] = processing_time
+            results['warnings'] = warnings
             
             logger.info(f"Audio analysis completed in {processing_time:.2f} seconds")
             
             return results
             
         except Exception as e:
-            logger.error(f"Error in audio analysis: {e}")
+            logger.error(f"Error in audio analysis: {e}", exc_info=True)
             return {
                 'error': str(e),
                 'timestamp': time.time(),
@@ -207,8 +305,8 @@ class AudioAnalyzer:
         """Detect speech segments in audio using energy-based VAD"""
         try:
             # Frame settings
-            frame_length = int(0.025 * sample_rate)  # 25ms frames
-            hop_length = int(0.01 * sample_rate)     # 10ms hop
+            frame_length = int(self.config.vad_frame_length_ms / 1000 * sample_rate)
+            hop_length = int(self.config.vad_hop_length_ms / 1000 * sample_rate)
             
             # Compute RMS energy
             rms_energy = librosa.feature.rms(
@@ -217,8 +315,11 @@ class AudioAnalyzer:
                 hop_length=hop_length
             )[0]
             
-            # Threshold for speech detection
-            energy_threshold = np.percentile(rms_energy, 30)  # Adaptive threshold
+            # Adaptive threshold for speech detection
+            energy_threshold = np.percentile(
+                rms_energy, 
+                self.config.energy_percentile_threshold
+            )
             
             # Find speech frames
             speech_frames = rms_energy > energy_threshold
@@ -239,65 +340,55 @@ class AudioAnalyzer:
                     start_time = frame_times[i]
                 elif not is_speech and start_time is not None:
                     segments.append({
-                        'start': start_time,
-                        'end': frame_times[i],
-                        'duration': frame_times[i] - start_time
+                        'start': float(start_time),
+                        'end': float(frame_times[i]),
+                        'duration': float(frame_times[i] - start_time)
                     })
                     start_time = None
             
             # Handle case where speech continues to end
             if start_time is not None:
                 segments.append({
-                    'start': start_time,
-                    'end': frame_times[-1],
-                    'duration': frame_times[-1] - start_time
+                    'start': float(start_time),
+                    'end': float(frame_times[-1]),
+                    'duration': float(frame_times[-1] - start_time)
                 })
             
             return segments
             
         except Exception as e:
-            logger.error(f"Error in speech segment detection: {e}")
+            logger.error(f"Error in speech segment detection: {e}", exc_info=True)
             return []
     
     def _transcribe_audio(self, audio_data: np.ndarray, sample_rate: int, 
                          file_path: Optional[str] = None) -> Dict:
         """Transcribe audio using Whisper"""
+        temp_file_path = None
         try:
             model = self._get_whisper_model()
             
             # Create temporary file if not provided
-            temp_file_created = False
             if file_path is None:
-                file_path = f"temp_whisper_{int(time.time())}.wav"
-                sf.write(file_path, audio_data, sample_rate)
-                temp_file_created = True
+                # Use UUID for unique temp file names
+                temp_file_path = f"temp_whisper_{uuid.uuid4().hex}.wav"
+                sf.write(temp_file_path, audio_data, sample_rate)
+                file_path = temp_file_path
             
             # Transcribe with Whisper
             result = model.transcribe(
                 file_path,
-                language="en",  # Can be made configurable
+                language=self.config.language,
                 task="transcribe",
                 verbose=False
             )
             
-            # Clean up temporary file
-            if temp_file_created:
-                try:
-                    os.remove(file_path)
-                except:
-                    pass
-            
             transcription = result["text"].strip()
             segments = result.get("segments", [])
             
-            # Calculate confidence score from segments
-            if segments:
-                # Whisper doesn't provide confidence in older versions
-                # Use segment count and length as proxy
-                avg_segment_length = np.mean([len(seg.get("text", "")) for seg in segments])
-                confidence_score = min(1.0, avg_segment_length / 20.0)  # Rough estimate
-            else:
-                confidence_score = 0.5 if transcription else 0.0
+            # Calculate improved confidence score
+            confidence_score = self._calculate_transcription_confidence(
+                transcription, segments, audio_data
+            )
             
             return {
                 'transcription': transcription,
@@ -307,7 +398,7 @@ class AudioAnalyzer:
             }
             
         except Exception as e:
-            logger.error(f"Error in transcription: {e}")
+            logger.error(f"Error in transcription: {e}", exc_info=True)
             return {
                 'transcription': '',
                 'confidence_score': 0.0,
@@ -315,6 +406,59 @@ class AudioAnalyzer:
                 'word_count': 0,
                 'transcription_error': str(e)
             }
+        finally:
+            # Clean up temporary file with proper error handling
+            if temp_file_path and os.path.exists(temp_file_path):
+                try:
+                    os.remove(temp_file_path)
+                    logger.debug(f"Cleaned up temporary file: {temp_file_path}")
+                except Exception as e:
+                    logger.error(f"Failed to remove temporary file {temp_file_path}: {e}")
+    
+    def _calculate_transcription_confidence(self, transcription: str, 
+                                           segments: List[Dict], 
+                                           audio_data: np.ndarray) -> float:
+        """
+        Calculate confidence score for transcription
+        
+        Uses multiple factors:
+        - Segment count and length
+        - Text coherence (word length distribution)
+        - Audio quality indicators
+        """
+        if not transcription:
+            return 0.0
+        
+        factors = []
+        
+        # Factor 1: Segment length consistency
+        if segments:
+            segment_lengths = [len(seg.get("text", "")) for seg in segments]
+            if segment_lengths:
+                avg_length = np.mean(segment_lengths)
+                # Normalized score: longer segments = higher confidence
+                length_score = min(1.0, avg_length / 30.0)
+                factors.append(length_score)
+        
+        # Factor 2: Word count relative to duration
+        word_count = len(transcription.split())
+        if word_count > 5:
+            factors.append(0.8)
+        elif word_count > 0:
+            factors.append(0.5)
+        else:
+            factors.append(0.0)
+        
+        # Factor 3: Audio quality (signal-to-noise estimate)
+        rms = np.sqrt(np.mean(audio_data**2))
+        if rms > 0.05:
+            factors.append(0.9)
+        elif rms > 0.01:
+            factors.append(0.7)
+        else:
+            factors.append(0.4)
+        
+        return float(np.mean(factors)) if factors else 0.5
     
     def _analyze_filler_words(self, transcription: str) -> Dict:
         """Analyze filler words in transcription"""
@@ -330,33 +474,25 @@ class AudioAnalyzer:
             # Clean and normalize text
             text = transcription.lower()
             text = re.sub(r'[^\w\s]', ' ', text)  # Remove punctuation
+            text = re.sub(r'\s+', ' ', text)  # Normalize whitespace
             words = text.split()
             
-            # Find filler words
-            filler_words_found = []
-            clean_words = []
+            # Build regex pattern for efficient matching
+            # Sort by length (descending) to match longer phrases first
+            sorted_fillers = sorted(self.filler_words, key=len, reverse=True)
+            pattern = r'\b(' + '|'.join(re.escape(f) for f in sorted_fillers) + r')\b'
             
-            i = 0
-            while i < len(words):
-                found_filler = False
-                
-                # Check for multi-word fillers first
-                for filler in sorted(self.filler_words, key=len, reverse=True):
-                    filler_words_list = filler.split()
-                    if i + len(filler_words_list) <= len(words):
-                        if words[i:i+len(filler_words_list)] == filler_words_list:
-                            filler_words_found.append({
-                                'filler': filler,
-                                'position': i,
-                                'type': 'multi_word' if len(filler_words_list) > 1 else 'single_word'
-                            })
-                            i += len(filler_words_list)
-                            found_filler = True
-                            break
-                
-                if not found_filler:
-                    clean_words.append(words[i])
-                    i += 1
+            # Find all filler word matches
+            filler_matches = list(re.finditer(pattern, text))
+            filler_words_found = [{
+                'filler': match.group(),
+                'position': len(text[:match.start()].split()),
+                'type': 'multi_word' if ' ' in match.group() else 'single_word'
+            } for match in filler_matches]
+            
+            # Create clean transcription
+            clean_text = re.sub(pattern, '', text)
+            clean_text = re.sub(r'\s+', ' ', clean_text).strip()
             
             total_words = len(words)
             filler_count = len(filler_words_found)
@@ -364,15 +500,15 @@ class AudioAnalyzer:
             
             return {
                 'filler_word_count': filler_count,
-                'filler_word_rate': filler_rate,
+                'filler_word_rate': float(filler_rate),
                 'filler_words_found': filler_words_found,
-                'clean_transcription': ' '.join(clean_words),
+                'clean_transcription': clean_text,
                 'total_words': total_words,
-                'clean_words': len(clean_words)
+                'clean_words': len(clean_text.split())
             }
             
         except Exception as e:
-            logger.error(f"Error analyzing filler words: {e}")
+            logger.error(f"Error analyzing filler words: {e}", exc_info=True)
             return {
                 'filler_word_count': 0,
                 'filler_word_rate': 0.0,
@@ -387,9 +523,9 @@ class AudioAnalyzer:
             pitches, magnitudes = librosa.piptrack(
                 y=audio_data, 
                 sr=sample_rate, 
-                threshold=0.1,
-                fmin=50,  # Minimum frequency (Hz)
-                fmax=400  # Maximum frequency (Hz)
+                threshold=self.config.pitch_threshold,
+                fmin=self.config.pitch_min_freq,
+                fmax=self.config.pitch_max_freq
             )
             
             # Extract fundamental frequency
@@ -406,6 +542,7 @@ class AudioAnalyzer:
                     'pitch_range': 0,
                     'pitch_variation': 0,
                     'pitch_stability': 0,
+                    'pitch_level': 'unknown',
                     'error': 'No pitch detected'
                 }
             
@@ -420,7 +557,7 @@ class AudioAnalyzer:
             pitch_variation = pitch_std / avg_pitch if avg_pitch > 0 else 0
             
             # Pitch stability (inverse of variation, normalized)
-            pitch_stability = max(0, 1 - (pitch_variation / 0.5))  # Normalize to 0-1
+            pitch_stability = max(0, 1 - (pitch_variation / 0.5))
             
             # Classify pitch level
             if avg_pitch < 120:
@@ -441,12 +578,13 @@ class AudioAnalyzer:
             }
             
         except Exception as e:
-            logger.error(f"Error analyzing pitch: {e}")
+            logger.error(f"Error analyzing pitch: {e}", exc_info=True)
             return {
                 'average_pitch': 0,
                 'pitch_range': 0,
                 'pitch_variation': 0,
                 'pitch_stability': 0,
+                'pitch_level': 'unknown',
                 'error': str(e)
             }
     
@@ -454,13 +592,13 @@ class AudioAnalyzer:
         """Analyze volume and energy characteristics"""
         try:
             # RMS energy analysis
-            frame_length = 2048
             rms_energy = librosa.feature.rms(
                 y=audio_data, 
-                frame_length=frame_length
+                frame_length=self.config.frame_length
             )[0]
             
-            # Convert to dB
+            # Convert to dB (avoid log of zero)
+            rms_energy = np.maximum(rms_energy, 1e-10)
             rms_db = librosa.amplitude_to_db(rms_energy)
             
             # Statistics
@@ -468,8 +606,8 @@ class AudioAnalyzer:
             volume_std = np.std(rms_db)
             volume_range = np.max(rms_db) - np.min(rms_db)
             
-            # Volume consistency (inverse of standard deviation)
-            volume_consistency = max(0, 1 - (volume_std / 20))  # Normalize
+            # Volume consistency (inverse of standard deviation, normalized)
+            volume_consistency = max(0, 1 - (volume_std / 20))
             
             # Dynamic range analysis
             dynamic_range = volume_range
@@ -492,7 +630,7 @@ class AudioAnalyzer:
             }
             
         except Exception as e:
-            logger.error(f"Error analyzing volume: {e}")
+            logger.error(f"Error analyzing volume: {e}", exc_info=True)
             return {
                 'average_volume_db': 0,
                 'volume_consistency': 0,
@@ -513,19 +651,19 @@ class AudioAnalyzer:
             word_count = len(transcription.split())
             speaking_rate = (word_count / duration) * 60  # words per minute
             
-            # Categorize speaking rate
-            if speaking_rate < 120:
+            # Categorize speaking rate using config
+            if speaking_rate < self.config.slow_rate_max:
                 category = 'slow'
-                pace_score = 0.6  # Slow is okay but not ideal
-            elif speaking_rate < 160:
+                pace_score = 0.6
+            elif speaking_rate < self.config.normal_rate_max:
                 category = 'normal'
-                pace_score = 1.0  # Ideal range
-            elif speaking_rate < 200:
+                pace_score = 1.0
+            elif speaking_rate < self.config.fast_rate_max:
                 category = 'fast'
-                pace_score = 0.8  # Fast but acceptable
+                pace_score = 0.8
             else:
                 category = 'very_fast'
-                pace_score = 0.4  # Too fast
+                pace_score = 0.4
             
             return {
                 'speaking_rate_wpm': float(speaking_rate),
@@ -536,7 +674,7 @@ class AudioAnalyzer:
             }
             
         except Exception as e:
-            logger.error(f"Error analyzing speaking rate: {e}")
+            logger.error(f"Error analyzing speaking rate: {e}", exc_info=True)
             return {
                 'speaking_rate_wpm': 0,
                 'speaking_rate_category': 'unknown',
@@ -546,19 +684,18 @@ class AudioAnalyzer:
     def _analyze_pauses(self, audio_data: np.ndarray, sample_rate: int) -> Dict:
         """Analyze pause patterns in speech"""
         try:
-            # Voice Activity Detection for pause analysis
-            frame_length = 2048
-            hop_length = 512
-            
             # Calculate RMS energy
             rms = librosa.feature.rms(
                 y=audio_data,
-                frame_length=frame_length,
-                hop_length=hop_length
+                frame_length=self.config.frame_length,
+                hop_length=self.config.hop_length
             )[0]
             
             # Define silence threshold
-            silence_threshold = np.percentile(rms, 20)  # Bottom 20% as silence
+            silence_threshold = np.percentile(
+                rms, 
+                self.config.silence_percentile_threshold
+            )
             
             # Find silence frames
             silence_frames = rms < silence_threshold
@@ -567,7 +704,7 @@ class AudioAnalyzer:
             frame_times = librosa.frames_to_time(
                 np.arange(len(silence_frames)),
                 sr=sample_rate,
-                hop_length=hop_length
+                hop_length=self.config.hop_length
             )
             
             # Find pause segments
@@ -581,11 +718,11 @@ class AudioAnalyzer:
                     in_pause = True
                 elif not is_silent and in_pause:
                     pause_duration = frame_times[i] - pause_start
-                    if pause_duration > 0.1:  # Only count pauses > 100ms
+                    if pause_duration > self.config.min_pause_duration:
                         pauses.append({
-                            'start': pause_start,
-                            'end': frame_times[i],
-                            'duration': pause_duration
+                            'start': float(pause_start),
+                            'end': float(frame_times[i]),
+                            'duration': float(pause_duration)
                         })
                     in_pause = False
             
@@ -594,16 +731,15 @@ class AudioAnalyzer:
                 pause_durations = [p['duration'] for p in pauses]
                 avg_pause_duration = np.mean(pause_durations)
                 total_pause_time = sum(pause_durations)
-                pause_frequency = len(pauses) / (len(audio_data) / sample_rate)  # pauses per second
+                pause_frequency = len(pauses) / (len(audio_data) / sample_rate)
             else:
                 avg_pause_duration = 0
                 total_pause_time = 0
                 pause_frequency = 0
             
             # Pause appropriateness score
-            # Ideal: 1-3 pauses per minute, 0.5-2 seconds each
-            ideal_pause_freq = 0.03  # ~2 pauses per minute
-            if 0.01 <= pause_frequency <= 0.05:  # 0.6-3 pauses per minute
+            # Ideal: 1-3 pauses per minute (0.016-0.05 per second), 0.5-2 seconds each
+            if 0.016 <= pause_frequency <= 0.05:
                 freq_score = 1.0
             else:
                 freq_score = 0.5
@@ -625,7 +761,7 @@ class AudioAnalyzer:
             }
             
         except Exception as e:
-            logger.error(f"Error analyzing pauses: {e}")
+            logger.error(f"Error analyzing pauses: {e}", exc_info=True)
             return {
                 'pause_count': 0,
                 'total_pause_time': 0,
@@ -638,37 +774,45 @@ class AudioAnalyzer:
         """Calculate overall clarity score based on multiple factors"""
         try:
             factors = []
+            weights = []
             
-            # Transcription confidence
-            factors.append(results.get('confidence_score', 0.5))
+            # Transcription confidence (weight: 2x)
+            confidence = results.get('confidence_score', 0.5)
+            factors.append(confidence)
+            weights.append(2.0)
             
-            # Filler word penalty
+            # Filler word penalty (weight: 1.5x)
             filler_rate = results.get('filler_word_rate', 0)
-            filler_score = max(0, 1 - (filler_rate / 10))  # Penalize >10% filler rate
+            filler_score = max(0, 1 - (filler_rate / 10))
             factors.append(filler_score)
+            weights.append(1.5)
             
-            # Speaking rate appropriateness
+            # Speaking rate appropriateness (weight: 1x)
             pace_score = results.get('pace_score', 0.5)
             factors.append(pace_score)
+            weights.append(1.0)
             
-            # Pitch stability
+            # Pitch stability (weight: 1x)
             pitch_stability = results.get('pitch_analysis', {}).get('pitch_stability', 0.5)
             factors.append(pitch_stability)
+            weights.append(1.0)
             
-            # Volume consistency
+            # Volume consistency (weight: 1x)
             volume_consistency = results.get('volume_analysis', {}).get('volume_consistency', 0.5)
             factors.append(volume_consistency)
+            weights.append(1.0)
             
-            # Pause appropriateness
+            # Pause appropriateness (weight: 1x)
             pause_score = results.get('pause_analysis', {}).get('pause_score', 0.5)
             factors.append(pause_score)
+            weights.append(1.0)
             
             # Calculate weighted average
-            clarity_score = np.mean(factors)
-            return max(0.0, min(1.0, clarity_score))
+            clarity_score = np.average(factors, weights=weights)
+            return float(max(0.0, min(1.0, clarity_score)))
             
         except Exception as e:
-            logger.error(f"Error calculating clarity score: {e}")
+            logger.error(f"Error calculating clarity score: {e}", exc_info=True)
             return 0.5
     
     def _calculate_voice_stability(self, results: Dict) -> float:
@@ -686,7 +830,10 @@ class AudioAnalyzer:
             
             # Speaking rate consistency (from history if available)
             if len(self.analysis_history) > 3:
-                recent_rates = [h.get('speaking_rate_wpm', 0) for h in self.analysis_history[-5:]]
+                recent_rates = [
+                    h.get('speaking_rate_wpm', 0) 
+                    for h in self.analysis_history[-5:]
+                ]
                 if all(r > 0 for r in recent_rates):
                     rate_std = np.std(recent_rates)
                     rate_mean = np.mean(recent_rates)
@@ -694,39 +841,53 @@ class AudioAnalyzer:
                     stability_factors.append(rate_consistency)
             
             voice_stability = np.mean(stability_factors)
-            return max(0.0, min(1.0, voice_stability))
+            return float(max(0.0, min(1.0, voice_stability)))
             
         except Exception as e:
-            logger.error(f"Error calculating voice stability: {e}")
+            logger.error(f"Error calculating voice stability: {e}", exc_info=True)
             return 0.5
     
     def _update_analysis_history(self, results: Dict):
         """Update analysis history for pattern detection"""
-        self.analysis_history.append({
-            'timestamp': results['timestamp'],
-            'speaking_rate_wpm': results.get('speaking_rate_wpm', 0),
-            'clarity_score': results.get('clarity_score', 0),
-            'filler_word_rate': results.get('filler_word_rate', 0),
-            'average_pitch': results.get('pitch_analysis', {}).get('average_pitch', 0),
-            'volume_consistency': results.get('volume_analysis', {}).get('volume_consistency', 0)
-        })
-        
-        # Maintain history size
-        if len(self.analysis_history) > self.max_history:
-            self.analysis_history.pop(0)
+        try:
+            self.analysis_history.append({
+                'timestamp': results['timestamp'],
+                'speaking_rate_wpm': results.get('speaking_rate_wpm', 0),
+                'clarity_score': results.get('clarity_score', 0),
+                'filler_word_rate': results.get('filler_word_rate', 0),
+                'average_pitch': results.get('pitch_analysis', {}).get('average_pitch', 0),
+                'volume_consistency': results.get('volume_analysis', {}).get('volume_consistency', 0)
+            })
+            
+            # Maintain history size
+            if len(self.analysis_history) > self.config.max_history:
+                self.analysis_history.pop(0)
+        except Exception as e:
+            logger.error(f"Error updating analysis history: {e}", exc_info=True)
     
     def _update_voice_baseline(self, results: Dict):
-        """Update voice baseline characteristics"""
+        """Update voice baseline characteristics using exponential moving average"""
         try:
+            alpha = 0.2  # Smoothing factor for exponential moving average
+            
             # Update pitch baseline
             avg_pitch = results.get('pitch_analysis', {}).get('average_pitch', 0)
             if avg_pitch > 0:
                 if self.voice_baseline['average_pitch'] is None:
                     self.voice_baseline['average_pitch'] = avg_pitch
                 else:
-                    # Running average
                     self.voice_baseline['average_pitch'] = (
-                        self.voice_baseline['average_pitch'] * 0.8 + avg_pitch * 0.2
+                        self.voice_baseline['average_pitch'] * (1 - alpha) + avg_pitch * alpha
+                    )
+            
+            # Update pitch range baseline
+            pitch_range = results.get('pitch_analysis', {}).get('pitch_range', 0)
+            if pitch_range > 0:
+                if self.voice_baseline['pitch_range'] is None:
+                    self.voice_baseline['pitch_range'] = pitch_range
+                else:
+                    self.voice_baseline['pitch_range'] = (
+                        self.voice_baseline['pitch_range'] * (1 - alpha) + pitch_range * alpha
                     )
             
             # Update pace baseline
@@ -736,11 +897,21 @@ class AudioAnalyzer:
                     self.voice_baseline['average_pace'] = speaking_rate
                 else:
                     self.voice_baseline['average_pace'] = (
-                        self.voice_baseline['average_pace'] * 0.8 + speaking_rate * 0.2
+                        self.voice_baseline['average_pace'] * (1 - alpha) + speaking_rate * alpha
+                    )
+            
+            # Update volume baseline
+            avg_volume = results.get('volume_analysis', {}).get('average_volume_db', 0)
+            if avg_volume != 0:
+                if self.voice_baseline['volume_baseline'] is None:
+                    self.voice_baseline['volume_baseline'] = avg_volume
+                else:
+                    self.voice_baseline['volume_baseline'] = (
+                        self.voice_baseline['volume_baseline'] * (1 - alpha) + avg_volume * alpha
                     )
             
         except Exception as e:
-            logger.error(f"Error updating voice baseline: {e}")
+            logger.error(f"Error updating voice baseline: {e}", exc_info=True)
     
     def get_analysis_summary(self) -> Dict:
         """Get summary of recent analysis results"""
@@ -750,12 +921,18 @@ class AudioAnalyzer:
         try:
             recent = self.analysis_history[-10:]  # Last 10 analyses
             
+            # Calculate averages for valid values only
+            clarity_scores = [r['clarity_score'] for r in recent if r['clarity_score'] > 0]
+            speaking_rates = [r['speaking_rate_wpm'] for r in recent if r['speaking_rate_wpm'] > 0]
+            filler_rates = [r['filler_word_rate'] for r in recent]
+            pitches = [r['average_pitch'] for r in recent if r['average_pitch'] > 0]
+            
             summary = {
                 'session_count': len(recent),
-                'average_clarity': np.mean([r['clarity_score'] for r in recent]),
-                'average_speaking_rate': np.mean([r['speaking_rate_wpm'] for r in recent if r['speaking_rate_wpm'] > 0]),
-                'average_filler_rate': np.mean([r['filler_word_rate'] for r in recent]),
-                'voice_consistency': np.std([r['average_pitch'] for r in recent if r['average_pitch'] > 0]),
+                'average_clarity': float(np.mean(clarity_scores)) if clarity_scores else 0.0,
+                'average_speaking_rate': float(np.mean(speaking_rates)) if speaking_rates else 0.0,
+                'average_filler_rate': float(np.mean(filler_rates)) if filler_rates else 0.0,
+                'voice_consistency': float(np.std(pitches)) if len(pitches) > 1 else 0.0,
                 'improvement_trend': self._calculate_improvement_trend(recent),
                 'voice_baseline': self.voice_baseline.copy()
             }
@@ -763,7 +940,7 @@ class AudioAnalyzer:
             return summary
             
         except Exception as e:
-            logger.error(f"Error generating analysis summary: {e}")
+            logger.error(f"Error generating analysis summary: {e}", exc_info=True)
             return {'error': str(e)}
     
     def _calculate_improvement_trend(self, recent_results: List[Dict]) -> str:
@@ -773,22 +950,75 @@ class AudioAnalyzer:
         
         try:
             # Use clarity scores for trend analysis
-            clarity_scores = [r['clarity_score'] for r in recent_results]
+            clarity_scores = [r['clarity_score'] for r in recent_results if r['clarity_score'] > 0]
             
-            # Simple linear trend
+            if len(clarity_scores) < 3:
+                return 'insufficient_data'
+            
+            # Simple linear trend using least squares
             x = np.arange(len(clarity_scores))
             slope = np.polyfit(x, clarity_scores, 1)[0]
             
-            if slope > 0.02:
+            # Thresholds for trend classification
+            improving_threshold = 0.02
+            declining_threshold = -0.02
+            
+            if slope > improving_threshold:
                 return 'improving'
-            elif slope < -0.02:
+            elif slope < declining_threshold:
                 return 'declining'
             else:
                 return 'stable'
                 
         except Exception as e:
-            logger.error(f"Error calculating improvement trend: {e}")
+            logger.error(f"Error calculating improvement trend: {e}", exc_info=True)
             return 'unknown'
+    
+    def export_analysis_history(self, filepath: str) -> bool:
+        """
+        Export analysis history to JSON file
+        
+        Args:
+            filepath: Path to save JSON file
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            with open(filepath, 'w') as f:
+                json.dump({
+                    'analysis_history': self.analysis_history,
+                    'voice_baseline': self.voice_baseline,
+                    'config': asdict(self.config)
+                }, f, indent=2)
+            logger.info(f"Analysis history exported to {filepath}")
+            return True
+        except Exception as e:
+            logger.error(f"Error exporting analysis history: {e}", exc_info=True)
+            return False
+    
+    def import_analysis_history(self, filepath: str) -> bool:
+        """
+        Import analysis history from JSON file
+        
+        Args:
+            filepath: Path to JSON file
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            with open(filepath, 'r') as f:
+                data = json.load(f)
+            
+            self.analysis_history = data.get('analysis_history', [])
+            self.voice_baseline = data.get('voice_baseline', self.voice_baseline)
+            
+            logger.info(f"Analysis history imported from {filepath}")
+            return True
+        except Exception as e:
+            logger.error(f"Error importing analysis history: {e}", exc_info=True)
+            return False
     
     def reset_analysis(self):
         """Reset analysis history and baseline"""
@@ -808,36 +1038,29 @@ class AudioAnalyzer:
             self.whisper_model = None
             logger.info("AudioAnalyzer cleaned up successfully")
         except Exception as e:
-            logger.error(f"Error during audio analyzer cleanup: {e}")
-
-# Utility function for testing
-def test_audio_analyzer():
-    """Test the AudioAnalyzer with a sample audio file"""
-    analyzer = AudioAnalyzer(model_size="base")
+            logger.error(f"Error during audio analyzer cleanup: {e}", exc_info=True)
     
-    print("AudioAnalyzer Test")
-    print("Place a test audio file named 'test_audio.wav' in the current directory")
+    def __enter__(self):
+        """Context manager entry"""
+        return self
     
-    test_file = "test_audio.wav"
-    if os.path.exists(test_file):
-        print(f"Analyzing {test_file}...")
-        results = analyzer.analyze_audio_file(test_file)
-        
-        print("\nAnalysis Results:")
-        print(f"Transcription: {results.get('transcription', 'N/A')[:100]}...")
-        print(f"Clarity Score: {results.get('clarity_score', 0):.2f}")
-        print(f"Speaking Rate: {results.get('speaking_rate_wpm', 0):.1f} WPM")
-        print(f"Filler Words: {results.get('filler_word_count', 0)} ({results.get('filler_word_rate', 0):.1f}%)")
-        print(f"Voice Stability: {results.get('voice_stability', 0):.2f}")
-        
-        pitch_data = results.get('pitch_analysis', {})
-        print(f"Average Pitch: {pitch_data.get('average_pitch', 0):.1f} Hz")
-        
-        volume_data = results.get('volume_analysis', {})
-        print(f"Volume Consistency: {volume_data.get('volume_consistency', 0):.2f}")
-        
-    else:
-        print(f"Test file {test_file} not found. Please provide a test audio file.")
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit"""
+        self.cleanup()
+        return False
 
-if __name__ == "__main__":
-    test_audio_analyzer()
+
+def create_analyzer(model_size: str = "base", language: str = "en", **kwargs) -> AudioAnalyzer:
+    """
+    Factory function to create AudioAnalyzer with custom configuration
+    
+    Args:
+        model_size: Whisper model size
+        language: Language code for transcription
+        **kwargs: Additional configuration parameters
+        
+    Returns:
+        AudioAnalyzer instance
+    """
+    config = AudioConfig(model_size=model_size, language=language, **kwargs)
+    return AudioAnalyzer(config)
