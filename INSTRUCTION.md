@@ -193,3 +193,6 @@ if not app.debug:
     file_handler.setLevel(logging.INFO)
     app.logger.addHandler(file_handler)
 ```
+
+docker build -t presentation-coach .
+docker run -p 5000:5000 --env-file .env presentation-coach
