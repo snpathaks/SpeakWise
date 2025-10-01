@@ -4,7 +4,7 @@
 
 SpeakWise helps users enhance their communication skills by analyzing **content, vocal delivery, and visual presentation**. It provides personalized, AI-driven feedback to help you become a confident and engaging speaker.  
 <h3>🏠 Home Page</h3>  
-<img src="index.png" width="300"/> 
+<img src="index.png" width="600"/> 
 
 
 ---
@@ -27,7 +27,7 @@ SpeakWise helps users enhance their communication skills by analyzing **content,
 - **Eye contact tracking**.  
 - **Gesture and posture analysis**.
   <h3>📑 Analysis Report</h3>  
-<img src="analysis.png" width="250"/>   
+<img src="Analysis.png" width="500"/>   
 
 ### 📊 User Dashboard  
 - Upload **scripts, audio, and video files**.  
@@ -35,7 +35,7 @@ SpeakWise helps users enhance their communication skills by analyzing **content,
 - Track progress over time.  
 - **Live analysis mode** for real-time feedback.
   <h3>📊 Dashboard</h3>  
-<img src="dashboard.png" width="250"/>   
+<img src="dashboard.png" width="500"/>   
 
 ---
 
