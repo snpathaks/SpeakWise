@@ -5,7 +5,7 @@
 SpeakWise helps users enhance their communication skills by analyzing **content, vocal delivery, and visual presentation**. It provides personalized, AI-driven feedback to help you become a confident and engaging speaker.  
 <h3 align="center">🏠 Home Page</h3>  
 <p align="center">
-  <img src="assets/index.png" width="700"/>
+  <img src="index.png" width="700"/>
 </p>
 
 
