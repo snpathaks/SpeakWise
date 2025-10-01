@@ -3,6 +3,8 @@
 **AI-powered presentation and public speaking coach**  
 
 SpeakWise helps users enhance their communication skills by analyzing **content, vocal delivery, and visual presentation**. It provides personalized, AI-driven feedback to help you become a confident and engaging speaker.  
+<img width="500" height="400" alt="image" src="https://github.com/user-attachments/assets/df6cf64a-abf8-4888-ba95-d6cb5577908b" />
+
 
 ---
 
@@ -22,13 +24,17 @@ SpeakWise helps users enhance their communication skills by analyzing **content,
 - Real-time analysis with **OpenCV** and **MediaPipe**.  
 - **Facial expression recognition**.  
 - **Eye contact tracking**.  
-- **Gesture and posture analysis**.  
+- **Gesture and posture analysis**.
+  <h3>📑 Analysis Report</h3>  
+<img src="assets/analysis.png" width="250"/>   
 
 ### 📊 User Dashboard  
 - Upload **scripts, audio, and video files**.  
 - View detailed **feedback reports** with scores and suggestions.  
 - Track progress over time.  
-- **Live analysis mode** for real-time feedback.  
+- **Live analysis mode** for real-time feedback.
+  <h3>📊 Dashboard</h3>  
+<img src="assets/dashboard.png" width="250"/>   
 
 ---
 
