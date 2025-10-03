@@ -1,5 +1,5 @@
 
-# SpeakWise 🎤  
+# SpeakWise 🎤  :
 **AI-powered presentation and public speaking coach**  
 
 SpeakWise helps users enhance their communication skills by analyzing **content, vocal delivery, and visual presentation**. It provides personalized, AI-driven feedback to help you become a confident and engaging speaker.  
