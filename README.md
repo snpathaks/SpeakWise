@@ -37,7 +37,7 @@ SpeakWise helps users enhance their communication skills by analyzing **content,
 - View detailed **feedback reports** with scores and suggestions.  
 - Track progress over time.  
 - **Live analysis mode** for real-time feedback.
-  <h3>📊 Dashboard</h3>  
+  <h3>📊 Dashboard</h3>  .
 <img src="dashboard.png" width="500"/>   
 
 ---
@@ -45,16 +45,16 @@ SpeakWise helps users enhance their communication skills by analyzing **content,
 ## 🛠️ Tech Stack  
 
 ### Backend  
-- **Framework:** Flask  
-- **Database:** Flask-SQLAlchemy (SQLite)  
+- **Framework:** Flask  .
+- **Database:** Flask-SQLAlchemy (SQLite)  .
 - **AI/ML:**  
-  - Audio: OpenAI Whisper, librosa  
-  - Video: OpenCV, MediaPipe  
-  - Content: Anthropic API  
-- **Deployment:** Gunicorn, Docker  
+  - Audio: OpenAI Whisper, librosa  .
+  - Video: OpenCV, MediaPipe  .
+  - Content: Anthropic API  .
+- **Deployment:** Gunicorn, Docker  .
 
 ### Frontend  
-- HTML5, CSS3, JavaScript  
+- HTML5, CSS3, JavaScript  .
 
 ---
 
@@ -62,6 +62,6 @@ SpeakWise helps users enhance their communication skills by analyzing **content,
 
 ### Prerequisites  
 - Python **3.10+**  
-- Virtual environment (recommended)  
+- Virtual environment (recommended)  .
 
 
