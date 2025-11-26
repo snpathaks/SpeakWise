@@ -44,7 +44,7 @@ SpeakWise helps users enhance their communication skills by analyzing **content,
 
 ## 🛠️ Tech Stack  
 
-### Backend  
+### Backend : 
 - **Framework:** Flask  .
 - **Database:** Flask-SQLAlchemy (SQLite)  .
 - **AI/ML:**  
@@ -53,8 +53,8 @@ SpeakWise helps users enhance their communication skills by analyzing **content,
   - Content: Anthropic API  .
 - **Deployment:** Gunicorn, Docker  .
 
-### Frontend  
-- HTML5, CSS3, JavaScript  .
+### Frontend :  
+- HTML5, CSS3, JavaScript .
 
 ---
 
@@ -62,6 +62,6 @@ SpeakWise helps users enhance their communication skills by analyzing **content,
 
 ### Prerequisites  
 - Python **3.10+**  
-- Virtual environment (recommended)  .
+- Virtual environment (recommended). 
 
 
